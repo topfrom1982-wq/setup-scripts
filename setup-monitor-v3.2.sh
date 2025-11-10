@@ -89,4 +89,3 @@ echo "💬 ส่งเข้า Telegram group: $CHAT_ID"
 echo "🕓 Interval: ทุก 10 นาที"
 echo "📜 Log file: $LOG_PATH"
 echo "-----------------------------------------"
-EOF
