@@ -1,109 +1,70 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# === JR x Top: Lao HTTPS Block Monitor v3.8 (Self-Update Edition) ===
-# ✅ ตรวจ HTTP + HTTPS แยก Block / Down / Online
-# ✅ retry 2 รอบ ลด false block
-# ✅ แจ้ง Telegram group + Bot Relay
-# ✅ ใช้ token top168
-# ✅ Self-update (อัปเดตตัวเองจาก GitHub)
-# ❌ ไม่ยิงตรง Worker
+# === JR x Top: Lao HTTPS Block Monitor — Setup v3.8 ===
+# ✔ ล้างไฟล์เก่า / cron เก่า
+# ✔ ดาวน์โหลด lao-monitor.sh ตัวล่าสุด
+# ✔ ตั้ง cron ใหม่
+# ✔ พร้อมใช้งานทันที
+
+echo "🚀 กำลังติดตั้ง Lao HTTPS Monitor v3.8..."
 
 # ------------------------------------------------
 # CONFIG
 # ------------------------------------------------
-GITHUB_SCRIPT="https://raw.githubusercontent.com/topfrom1982-wq/setup-scripts/main/lao-monitor.sh"
-GITHUB_RAW="https://raw.githubusercontent.com/topfrom1982-wq/domains/main/domains.txt"
-
-TG_TOKEN="8505152360:AAGOqN30EgVKVyN1J7dw4M3PgWeeaZrJLB4"
-CHAT_ID="-4859960595"
-ISP="Unitel"
-
-RELAY_URL="https://telegram-relay.click18up.workers.dev/report"
-TOKEN="top168"
+SCRIPT_URL="https://raw.githubusercontent.com/topfrom1982-wq/setup-scripts/main/lao-monitor.sh"
+DOMAIN_URL="https://raw.githubusercontent.com/topfrom1982-wq/domains/main/domains.txt"
 
 SCRIPT_PATH="$HOME/lao-monitor.sh"
 LOG="$HOME/lao-monitor.log"
 DOMAIN_FILE="$HOME/domains.txt"
 
-# ------------------------------------------------
-# SELF-UPDATE CHECK
-# ------------------------------------------------
-NEW_TMP="$HOME/lao-monitor-new.sh"
-
-curl -s -o "$NEW_TMP" "$GITHUB_SCRIPT"
-
-if [ -s "$NEW_TMP" ]; then
-  if ! diff -q "$SCRIPT_PATH" "$NEW_TMP" > /dev/null 2>&1; then
-    echo "♻️ พบเวอร์ชันใหม่ → อัปเดตตัวเอง..." >> "$LOG"
-    mv "$NEW_TMP" "$SCRIPT_PATH"
-    chmod +x "$SCRIPT_PATH"
-    bash "$SCRIPT_PATH"
-    exit 0
-  fi
-fi
-
-rm -f "$NEW_TMP"
+CRON_FILE="$PREFIX/var/spool/cron/crontabs/$(whoami)"
 
 # ------------------------------------------------
-# ดาวน์โหลดรายชื่อโดเมน
+# ล้างของเก่าก่อนติดตั้ง
 # ------------------------------------------------
-curl -s -o "$DOMAIN_FILE" "$GITHUB_RAW"
+echo "🧹 ล้างไฟล์เก่า..."
+rm -f "$SCRIPT_PATH" "$LOG" "$DOMAIN_FILE" "$HOME/lao-monitor-new.sh" 2>/dev/null
 
-if [ ! -s "$DOMAIN_FILE" ]; then
-  MSG="⚠️ [$ISP] ไม่พบโดเมนใน GitHub"
-  curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
-       -H "Content-Type: application/json" \
-       -d "{\"chat_id\":${CHAT_ID}, \"text\":\"${MSG}\"}" > /dev/null
-  exit 0
-fi
-
-echo "[$(date '+%H:%M:%S')] 🔍 เริ่มตรวจโดเมน..." >> "$LOG"
+echo "🧹 ล้าง cron เก่า..."
+sed -i '/lao-monitor.sh/d' "$CRON_FILE" 2>/dev/null
 
 # ------------------------------------------------
-# LOOP ตรวจโดเมนทั้งหมด
+# ติดตั้ง package ที่จำเป็น
 # ------------------------------------------------
-while read -r DOMAIN; do
-  [[ -z "$DOMAIN" ]] && continue
+echo "📦 ติดตั้งแพ็กเกจที่จำเป็น..."
+pkg update -y > /dev/null 2>&1
+pkg install -y curl jq cronie termux-api > /dev/null 2>&1
 
-  STATUS="❓ Unknown"
+# ------------------------------------------------
+# ดาวน์โหลดไฟล์ main script
+# ------------------------------------------------
+echo "⬇️ ดาวน์โหลด lao-monitor.sh..."
+curl -s -o "$SCRIPT_PATH" "$SCRIPT_URL"
+chmod +x "$SCRIPT_PATH"
 
-  for TRY in 1 2; do
-    curl -Is --connect-timeout 5 "http://$DOMAIN" > /dev/null 2>&1
-    HTTP_OK=$?
+# ดาวน์โหลด domains ครั้งแรก
+echo "⬇️ ดาวน์โหลด domains.txt..."
+curl -s -o "$DOMAIN_FILE" "$DOMAIN_URL"
 
-    curl -Is --connect-timeout 5 "https://$DOMAIN" > /dev/null 2>&1
-    HTTPS_OK=$?
+# ------------------------------------------------
+# ตั้ง cron ใหม่
+# ------------------------------------------------
+echo "📅 ตั้ง cron ให้รันทุก 10 นาที..."
+mkdir -p $(dirname "$CRON_FILE")
+sed -i '/lao-monitor.sh/d' "$CRON_FILE" 2>/dev/null
+echo "*/10 * * * * bash $SCRIPT_PATH" >> "$CRON_FILE"
 
-    if   [ $HTTP_OK -eq 0 ] && [ $HTTPS_OK -ne 0 ]; then STATUS="🚫 Block"
-    elif [ $HTTP_OK -ne 0 ] && [ $HTTPS_OK -ne 0 ]; then STATUS="❌ Down"
-    elif [ $HTTP_OK -eq 0 ] && [ $HTTPS_OK -eq 0 ]; then STATUS="✅ Online"
-    fi
+# เริ่ม cron
+crond
+termux-wake-lock
 
-    [ "$STATUS" != "❌ Down" ] && break
-    sleep 2
-  done
+# ------------------------------------------------
+# เริ่มตรวจรอบแรก
+# ------------------------------------------------
+echo "▶️ เริ่มรอบแรก..."
+bash "$SCRIPT_PATH"
 
-  MSG="[$ISP] ${DOMAIN} → ${STATUS}"
-
-  # ส่ง Telegram group
-  curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
-       -H "Content-Type: application/json" \
-       -d "{\"chat_id\":${CHAT_ID}, \"text\":\"${MSG}\"}" > /dev/null
-
-  # ส่ง Bot Relay
-  STATUS_TEXT=""
-  case "$STATUS" in
-    "✅ Online") STATUS_TEXT="ok" ;;
-    "🚫 Block")  STATUS_TEXT="blocked" ;;
-    "❌ Down")   STATUS_TEXT="down" ;;
-    *)          STATUS_TEXT="unknown" ;;
-  esac
-
-  curl -s -X POST "$RELAY_URL" \
-       -H "Content-Type: application/json" \
-       -d "{\"isp\":\"${ISP}\",\"domain\":\"${DOMAIN}\",\"status\":\"${STATUS_TEXT}\",\"token\":\"${TOKEN}\"}" > /dev/null
-
-  echo "[$(date '+%H:%M:%S')] ${DOMAIN} → ${STATUS}" >> "$LOG"
-
-done < "$DOMAIN_FILE"
-
-echo "[$(date '+%d/%m/%Y %H:%M:%S')] ✅ ตรวจครบแล้ว" >> "$LOG"
+echo "✅ ติดตั้งสำเร็จเรียบร้อยแล้ว v3.8"
+echo "📜 Log: $LOG"
+echo "🌍 Domain list: $DOMAIN_FILE"
+echo "🕑 Cron: ทุก 10 นาที"
