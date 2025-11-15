@@ -1,11 +1,10 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# === JR x Top: Lao HTTPS Block Monitor v3.8 (Self-Update Edition) ===
+# === JR x Top: Lao HTTPS Block Monitor v3.8 (Self-Update Edition + Telegram Only) ===
 # ✅ ตรวจ HTTP + HTTPS แยก Block / Down / Online
 # ✅ retry 2 รอบ ลด false block
-# ✅ แจ้ง Telegram group + Bot Relay
-# ✅ ใช้ token top168
-# ✅ Self-update (อัปเดตตัวเองจาก GitHub)
-# ❌ ไม่ยิงตรง Worker (ปลอดภัย 100%)
+# ✅ แจ้งเข้า Telegram เท่านั้น
+# ❌ ไม่ยิงเข้า Worker (ปลอดภัย 100%)
+# ✅ Self-update อัปเดตตัวเองจาก GitHub
 
 # ------------------------------------------------
 # CONFIG
@@ -16,9 +15,6 @@ GITHUB_RAW="https://raw.githubusercontent.com/topfrom1982-wq/domains/main/domain
 TG_TOKEN="8505152360:AAGOqN30EgVKVyN1J7dw4M3PgWeeaZrJLB4"
 CHAT_ID="-4859960595"
 ISP="Unitel"
-
-RELAY_URL="https://telegram-relay.click18up.workers.dev/report"
-TOKEN="top168"
 
 SCRIPT_PATH="$HOME/lao-monitor.sh"
 LOG="$HOME/lao-monitor.log"
@@ -67,7 +63,6 @@ while read -r DOMAIN; do
   STATUS="❓ Unknown"
 
   for TRY in 1 2; do
-
     curl -Is --connect-timeout 5 "http://$DOMAIN" > /dev/null 2>&1
     HTTP_OK=$?
 
@@ -85,23 +80,10 @@ while read -r DOMAIN; do
 
   MSG="[$ISP] ${DOMAIN} → ${STATUS}"
 
-  # ส่ง Telegram group
+  # === ส่ง Telegram เท่านั้น ===
   curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
        -H "Content-Type: application/json" \
        -d "{\"chat_id\":${CHAT_ID}, \"text\":\"${MSG}\"}" > /dev/null
-
-  # ส่ง Bot Relay
-  STATUS_TEXT=""
-  case "$STATUS" in
-    "✅ Online") STATUS_TEXT="ok" ;;
-    "🚫 Block")  STATUS_TEXT="blocked" ;;
-    "❌ Down")   STATUS_TEXT="down" ;;
-    *)          STATUS_TEXT="unknown" ;;
-  esac
-
-  curl -s -X POST "$RELAY_URL" \
-       -H "Content-Type: application/json" \
-       -d "{\"isp\":\"${ISP}\",\"domain\":\"${DOMAIN}\",\"status\":\"${STATUS_TEXT}\",\"token\":\"${TOKEN}\"}" > /dev/null
 
   echo "[$(date '+%H:%M:%S')] ${DOMAIN} → ${STATUS}" >> "$LOG"
 
